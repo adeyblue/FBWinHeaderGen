@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "MetadataParser": {
+      "commandName": "Project",
+      "commandLineArgs": "-i \"H:\\FB\\NetMetadataParser\\microsoft.windows.sdk.win32metadata.61.0.15-preview\\Windows.Win32.winmd\" -o T:\\nsdir -g -w -j \"H:\\FB\\NetMetadataParser\\net\\MetadataParser\\injections.txt\" -f \"h:\\fb\\netmetadataparser\\net\\metadataparser\\fixes.txt\""
+    }
+  }
+}

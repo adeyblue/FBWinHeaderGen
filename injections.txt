@@ -1,0 +1,93 @@
+#
+# This file can be used to place plain text in an output file
+# It's not used for anything right now, but you can still make use of it
+# The format is very imilar to the fixes file
+#
+# Namespaces are specified with one dash
+#
+#- windows.win32.foundation
+#
+# Then the section of the file is specified by two dashes
+# This can be
+# functions
+# functionptrs
+# interfaces
+# Enums
+# constants
+# structs
+#
+# An example is this
+#- windows.win32.foundation
+# -- structs
+# Type GUID
+#    a as ULong
+#    b as UShort
+#    c as UShort
+#    d(0 to 7) as UByte
+# End Type
+#
+# Type IID as GUID
+# Type CLSID as GUID
+#
+# The 'section' is a remnant of when the file output was done each type of thing at a time (and failed)
+# right now with the freebasic output they're just all output at the bottom of the file after all the stuff in the namespace
+- windows.win32.system.com
+-- functions
+Type ComInit
+    As ULong dummy
+    Declare Constructor(ByVal initType As COINIT = COINIT_APARTMENTTHREADED Or COINIT_DISABLE_OLE1DDE)
+    Declare Destructor()
+End Type
+
+Private Constructor ComInit(ByVal initType As COINIT)
+    CoInitializeEx(NULL, initType)
+End Constructor
+
+Private Destructor ComInit()
+    CoUninitialize()
+End Destructor
+
+ #define IFaceWrapName(ifaceType) InterfaceWrap##iFaceType
+ #macro IFaceWrapDef(iFaceType)
+Type IFaceWrapName(iFaceType)
+    As iFaceType Ptr pIFace
+
+    Declare Operator@() As iFaceType Ptr Ptr
+    Declare Destructor()
+End Type
+
+Private Operator IFaceWrapName(iFaceType).@() As ifaceType Ptr Ptr
+    Return @pIFace
+End Operator
+
+Private Operator *(ByRef wrap as IFaceWrapName(iFaceType)) As iFaceType Ptr
+    Return wrap.pIFace
+End Operator
+
+Private Destructor IFaceWrapName(iFaceType)()
+    If pIFace Then pIFace->Release()
+End Destructor
+
+'' This creates a CoCreateLocal<interfaceName> define
+'' So CoCreateLocalIVirtualDesktopManager for example which you can then use
+'' instead of CoCreateInstance
+__FB_UNQUOTE__( _
+    __FB_EVAL__( _
+        "#define " + _
+        __FB_QUOTE__( _
+            CoCreateLocal##iFaceType _
+        ) +_
+        "(clsid, interfacePtr) CoCreateInstance(@clsid, CLSCTX_INPROC_SERVER, @" + _
+        __FB_QUOTE__(IID_##iFaceType) + _
+        ", cast(Any Ptr Ptr, interfacePtr))" _
+    ) _
+)
+
+ #endmacro
+
+ #define FAILED(hr) ((hr) < 0)
+ #define SUCCEEDED(hr) ((hr) >= 0)
+
+- windows.win32.foundation
+-- constants
+Const NULL As Any Ptr = 0

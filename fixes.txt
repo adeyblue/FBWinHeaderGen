@@ -1,0 +1,338 @@
+﻿# Format of this file is
+# - source namespace
+# name -> target-namespace(,newname)(,attributeField=newValue)
+#
+# - 'name' can be '_' to means everything, to move complete namespaces
+# - 'target-namespace' can be empty to just rename a type without changing namespaces (the comma before 'newname' is still required)
+# - 'attributeField' can be any of the fields in the CustomAttributeValues type (see CustomAttributeParser.cs) that are either a string
+# or a type that can be made null, and newValue is the value to change that field to. It is used in the file below to remove the
+# structSizeField annotation from types where it is mistakenly applied and that cause problems in the generated freebasic.
+#
+# A simple example is
+#
+# - windows.win32.system.com
+# IUnknown -> windows.win32.foundation,IBaseInterface
+#
+# This would move the IUnknown type from windows.win32.system.com namespace to the 
+# windows.win32.foundation namespace and change its' name to IBaseInterface (and fixup all references to it)
+#
+# Names of types and attribute fields are case-sensitive as there are multiple entries in the metadata 
+# that differ only by case
+# Namespaces are not case-sensitive
+#
+# An example of something more common
+# - windows.win32.media.audio
+# ACMDRIVERDETAILSA -> ,ACMDRIVERDETAILS_A
+# ACMDRIVERDETAILSW -> ,ACMDRIVERDETAILS_W
+#
+# The freebasic generation follows the normal sdk pattern of generating a macro for the base name of A and W types
+# for things that are tagged with the ansi or unicode attributes
+# Unfortunately sometimes the base name (ie the name without the A or W that's made into the macro)
+# conflicts with something that already exists (in this case the acmDriverDetails function
+# as freebasic is not case-sensitive for identifier)
+# so the example above renames the A and W types to put an _ 
+# between them without moving namespaces so that when the A and W are stripped
+# to form the macro, we end up with a non conflicting name that ends in the _
+#
+#
+# Note this file can only rename the major types that the NSTypeCollector reads, namely
+# Interface names, Structs, Enum names, Constant names (including enums members), free functions and function pointers
+# So for instance, the names of function parameters cannot be changed by this file
+#
+#
+# The real file starts here
+#
+# These entries are organisational
+# This breaks cyclical references between these two namespaces. 
+- windows.win32.system.variant
+_ -> windows.win32.system.com
+#
+# This breaks another cyclical references
+- windows.win32.system.ole
+PARAMDESC -> windows.win32.system.com
+PARAMDESCEX -> windows.win32.system.com
+PARAMFLAGS -> windows.win32.system.com
+#
+# This namespace contains like 3 things that are all about jet
+- windows.win32.storage.structuredstorage
+_ -> windows.win32.storage.jet
+#
+- windows.win32.foundation
+BOOLEAN -> ,WINBOOLEAN
+#
+# Most of these names are already used by normal GDI, the ret are just for conformity
+- windows.win32.graphics.gdiplus
+Size -> ,GdipSize
+SizeF -> ,GdipSizeF
+Point -> ,GdipPoint
+PointF -> ,GdipPointF
+Rect -> ,GdipRect
+RectF -> ,GdipRectF
+Bitmap -> ,GdipBitmap
+Image -> ,GdipImage
+ColorMap -> ,GdipColorMap
+#
+# VarEnum is also a function
+- windows.win32.system.com
+VARENUM -> ,VARENUM_
+# BLOB shouldn't have the structsizefield attribute
+BLOB -> ,,sizeField=null
+#
+- windows.win32.system.systemservices
+IMAGE_DEBUG_MISC.Unicode -> ,Unicode_
+#
+# These enum constants collide with freebasic types, or have duplicate names across different enums, or both!
+- windows.win32.ai.machinelearning.winml
+MLOperatorAttributeType.Undefined -> ,UndefinedAttrType
+MLOperatorAttributeType.Float -> ,FloatAttrType
+MLOperatorAttributeType.Int -> ,IntAttrType
+MLOperatorAttributeType.String -> ,StringAttrType
+MLOperatorAttributeType.FloatArray -> ,FloatArrayAttrType
+MLOperatorAttributeType.IntArray -> ,IntArrayAttrType
+MLOperatorAttributeType.StringArray -> ,StringArrayAttrType
+#
+MLOperatorTensorDataType.Undefined -> ,UndefinedDataType
+MLOperatorTensorDataType.Float -> ,FloatDataType
+MLOperatorTensorDataType.Int8 -> ,Int8DataType
+MLOperatorTensorDataType.UInt8 -> ,UInt8DataType
+MLOperatorTensorDataType.Int16 -> ,Int16DataType
+MLOperatorTensorDataType.UInt16 -> ,UInt16DataType
+MLOperatorTensorDataType.Int32 -> ,Int32DataType
+MLOperatorTensorDataType.UInt32 -> ,UInt32DataType
+MLOperatorTensorDataType.Int64 -> ,Int64DataType
+MLOperatorTensorDataType.UInt64 -> ,UInt64DataType
+MLOperatorTensorDataType.String -> ,StringDataType
+MLOperatorTensorDataType.Double -> ,DoubleDataType
+MLOperatorTensorDataType.Bool -> ,BoolDataType
+MLOperatorTensorDataType.Float16 -> ,Float16DataType
+MLOperatorTensorDataType.Complex64 -> ,Complex64DataType
+MLOperatorTensorDataType.Complex128 -> ,Complex128DataType
+#
+MLOperatorEdgeType.Undefined -> ,UndefinedEdgeType
+#
+MLOperatorParameterOptions.Single -> ,SingleParameter
+MLOperatorParameterOptions.Optional -> ,OptionalParameter
+MLOperatorParameterOptions.Variadic -> ,VariadicParameter
+#
+MLOperatorExecutionType.Undefined -> ,UndefinedExecutionType
+MLOperatorExecutionType.Cpu -> ,CpuExecutionType
+MLOperatorExecutionType.D3D12 -> ,D3D12ExecutionType
+#
+MLOperatorKernelOptions.None -> ,NoOperatorKernelOptions
+#
+MLOperatorSchemaEdgeTypeFormat.Label -> ,LabelTypeFormat
+#
+- windows.win32.system.wmi
+MI_BOOLEAN -> ,MI_BOOLEAN_
+MI_UINT8 -> ,MI_UINT8_
+MI_SINT8 -> ,MI_SINT8_
+MI_UINT16 -> ,MI_UINT16_
+MI_SINT16 -> ,MI_SINT16_
+MI_UINT32 -> ,MI_UINT32_
+MI_SINT32 -> ,MI_SINT32_
+MI_UINT64 -> ,MI_UINT64_
+MI_SINT64 -> ,MI_SINT64_
+MI_REAL64 -> ,MI_REAL64_
+MI_REAL32 -> ,MI_REAL32_
+MI_CHAR16 -> ,MI_CHAR16_
+MI_DATETIME -> ,MI_DATETIME_
+MI_STRING -> ,MI_STRING_
+MI_REFERENCE -> ,MI_REFERENCE_
+MI_INSTANCE -> ,MI_INSTANCE_
+MI_ARRAY -> ,MI_ARRAY_
+MI_BOOLEANA -> ,MI_BOOLEANA_
+MI_UINT8A -> ,MI_UINT8A_
+MI_SINT8A -> ,MI_SINT8A_
+MI_UINT16A -> ,MI_UINT16A_
+MI_SINT16A -> ,MI_SINT16A_
+MI_UINT32A -> ,MI_UINT32A_
+MI_SINT32A -> ,MI_SINT32A_
+MI_UINT64A -> ,MI_UINT64A_
+MI_SINT64A -> ,MI_SINT64A_
+MI_REAL64A -> ,MI_REAL64A_
+MI_REAL32A -> ,MI_REAL32A_
+MI_CHAR16A -> ,MI_CHAR16A_
+MI_DATETIMEA -> ,MI_DATETIMEA_
+MI_STRINGA -> ,MI_STRINGA_
+MI_REFERENCEA -> ,MI_REFERENCEA_
+MI_INSTANCEA -> ,MI_INSTANCEA_
+#
+# Log is a freebasic function, HRESULT is the interface return type
+- windows.win32.devices.imageacquisition
+IWiaLog.hResult -> ,hResult_
+IWiaLog.Log -> ,Log_
+IWiaLogEx.hResult -> ,hResult_
+IWiaLogEx.Log -> ,Log_
+#
+# 'Success' is already used in a different namespace
+- windows.win32.security.licenseprotection
+LicenseProtectionStatus.Success -> ,LicenseSuccess
+#
+- windows.win32.system.windowsprogramming
+CameraUIControlLinearSelectionMode.Single -> ,CameraUIControlModeSingle
+CameraUIControlLinearSelectionMode.Multiple -> ,CameraUIControlModeMultiple
+CameraUIControlMode.Browse -> ,CameraControlModeBrowse
+CameraUIControlMode.Linear -> ,CameraControlModeLinear
+#
+# There are other structures called the same thing (with different contents)
+- windows.win32.media.directshow
+AVIStreamHeader -> ,AviStreamHeader_
+DXVA2_VIDEOSAMPLE -> ,DXVA2_VIDEOSAMPLE_
+#
+- windows.win32.ui.input.keyboardandmouse
+TRACKMOUSEEVENT -> ,TRACKMOUSEEVENT_
+INPUT -> ,INPUT_
+#
+- windows.win32.networkmanagement.ndis
+OFFLOAD_OPERATION_E.AUTHENTICATE -> ,AUTHENTICATE_OFFLOAD
+OFFLOAD_OPERATION_E.ENCRYPT -> ,ENCRYPT_OFFLOAD
+#
+- windows.win32.networking.winhttp
+URL_COMPONENTS -> ,URL_COMPONENTS_W_
+#
+- windows.win32.networkmanagement.rras
+RASENTRYDLGA -> ,RASENTRYDLG_A
+RASENTRYDLGW -> ,RASENTRYDLG_W
+RASDIALDLG -> ,RASDIALDLG_
+#
+# Property is a fb keyword
+- windows.win32.system.mmc
+Property -> ,Property_
+#
+- windows.win32.media.mediaplayer
+IXFeedItem.Guid -> ,Guid_
+#
+# These dispid names exist in a different namespace too, but they have different values
+- windows.win32.ui.tabletpc
+DISPID_InkEdit.DISPID_Enabled -> ,DISPID_InkEditEnabled
+DISPID_InkEdit.DISPID_Hwnd -> ,DISPID_InkEditHwnd
+DISPID_InkEdit.DISPID_Text -> ,DISPID_InkEditText
+DISPID_InkEdit.DISPID_MaxLength -> ,DISPID_InkEditMaxLength
+DISPID_InkEdit.DISPID_ScrollBars -> ,DISPID_InkEditScrollBars
+DISPID_InkEdit.DISPID_MultiLine -> ,DISPID_InkEditMultiLine
+DISPID_InkEdit.DISPID_Refresh -> ,DISPID_InkEditRefresh
+#
+- windows.win32.web.mshtml
+DISPID_OBJECT -> ,DISPID_MSHTML_OBJECT
+#
+# Seriously, a constant with a 140 character name?
+# FB throws a warning because it's too long. I concur
+- windows.win32.media.mediafoundation
+D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_FLAGS.D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_FLAG_6_DISABLE_CHROMA_BLOCK_EDGES_AND_USE_LUMA_TWO_STAGE_DEBLOCKING -> ,D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_FLAG_6_DISABLE_CHROMA_BLOCK_EDGES_LUMA_2_STAGE_DEBLOCKING
+D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODES.D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_6_DISABLE_CHROMA_BLOCK_EDGES_AND_USE_LUMA_TWO_STAGE_DEBLOCKING -> ,D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_6_DISABLE_CHROMA_BLOCK_EDGES_LUMA_2_STAGE_DEBLOCKING
+#
+- windows.win32.system.com.structuredstorage
+# This shouldn't have the StructSizeField set
+BSTRBLOB -> ,,sizeField=null
+#
+# From here on, these are mostly all the name collisions between
+# constants, structs and functions, etc
+# where the two differ by case
+# cases where they are the same, er, case are dealt with by the file output
+# FileOutput
+- windows.win32.system.console
+CONSOLECONTROL -> ,CONSOLECONTROL_
+ConsoleSetForeground -> ,ConsoleSetForeground_
+ConsoleEndTask -> ,ConsoleEndTask_
+#
+- windows.win32.networking.activedirectory
+OPENQUERYWINDOW -> ,OPENQUERYWINDOW_
+#
+- windows.win32.system.ole
+VARCMP -> ,VARCMP_
+OLECREATE -> ,OLECREATE_
+OLEUIPASTESPECIALA -> ,OLEUIPASTESPECIAL_A
+OLEUIPASTESPECIALW -> ,OLEUIPASTESPECIAL_W
+OLEUICHANGEICONA -> ,OLEUICHANGEICON_A
+OLEUICHANGEICONW -> ,OLEUICHANGEICON_W
+OLEUICONVERTA -> ,OLEUICONVERT_A
+OLEUICONVERTW -> ,OLEUICONVERT_W
+OLEUIBUSYA ->  ,OLEUIBUSY_A
+OLEUIBUSYW ->  ,OLEUIBUSY_W
+OLEUIINSERTOBJECTA -> ,OLEUIINSERTOBJECT_A
+OLEUIINSERTOBJECTW -> ,OLEUIINSERTOBJECT_W
+OLEUICHANGESOURCEA -> ,OLEUICHANGESOURCE_A
+OLEUICHANGESOURCEW -> ,OLEUICHANGESOURCE_W
+OLEUIEDITLINKSA -> ,OLEUIEDITLINKS_A
+OLEUIEDITLINKSW -> ,OLEUIEDITLINKS_W
+#
+- windows.win32.ui.controls.dialogs
+CHOOSECOLORA -> ,CHOOSECOLOR_A
+CHOOSECOLORW -> ,CHOOSECOLOR_W
+CHOOSEFONTA -> ,CHOOSEFONT_A
+CHOOSEFONTW -> ,CHOOSEFONT_W
+PRINTDLGA -> ,PRINTDLG_A
+PRINTDLGW -> ,PRINTDLG_W
+PRINTDLGEXA -> ,PRINTDLGEX_A
+PRINTDLGEXW -> ,PRINTDLGEX_W
+PAGESETUPDLGA -> ,PAGESETUPDLG_A
+PAGESETUPDLGW -> ,PAGESETUPDLG_W
+#
+- windows.win32.media.audio
+ACMDRIVERDETAILSA -> ,ACMDRIVERDETAILS_A
+ACMDRIVERDETAILSW -> ,ACMDRIVERDETAILS_W
+ACMFORMATTAGDETAILSA -> ,ACMFORMATTAGDETAILS_A
+ACMFORMATTAGDETAILSW -> ,ACMFORMATTAGDETAILS_W
+ACMFORMATCHOOSEA -> ,ACMFORMATCHOOSE_A
+ACMFORMATCHOOSEW -> ,ACMFORMATCHOOSE_W
+ACMFILTERTAGDETAILSA -> ,ACMFILTERTAGDETAILS_A
+ACMFILTERTAGDETAILSW -> ,ACMFILTERTAGDETAILS_W
+ACMFILTERDETAILSA -> ,ACMFILTERDETAILS_A
+ACMFILTERDETAILSW -> ,ACMFILTERDETAILS_W
+ACMFILTERCHOOSEA -> ,ACMFILTERCHOOSE_A
+ACMFILTERCHOOSEW -> ,ACMFILTERCHOOSE_W
+#
+- windows.win32.media.multimedia
+AVIFILEINFOA -> ,AVIFILEINFO_A
+AVIFILEINFOW -> ,AVIFILEINFO_W
+AVISTREAMINFOA -> ,AVISTREAMINFO_A
+AVISTREAMINFOw -> ,AVISTREAMINFO_W
+#
+- windows.win32.system.remotedesktop
+WTSConfigInfo -> ,WTSConfigInfo_
+#
+- windows.win32.system.windowsprogramming
+WinStationInformation -> ,WinStationInformation_
+#
+- windows.win32.system.addressbook
+OPENSTREAMONFILE -> ,OPENSTREAMONFILE_
+#
+- windows.win32.storage.jet
+JET_DbInfoUpgrade -> ,JET_DbInfoUpgrade_
+JET_DbInfoMisc -> ,JET_InfoMisc_
+#
+- windows.win32.ui.shell
+URLIS -> ,URLIS_
+#
+- windows.win32.devices.geolocation
+GNSS_GeoRegion_Circle -> ,GNSS_GeoRegion_Circle_
+#
+- windows.win32.devices.tapi
+OPENTNEFSTREAM -> ,OPENTNEFSTREAM_
+OPENTNEFSTREAMEX -> ,OPENTNEFSTREAMEX_
+GETTNEFSTREAMCODEPAGE -> ,GETTNEFSTREAMCODEPAGE_
+#
+- windows.win32.graphics.gdi
+SETMITERLIMIT -> ,SETMITERLIMIT_
+EXTTEXTOUT -> ,EXTTEXTOUT_
+STRETCHBLT -> ,STRETCHBLT_
+#
+- windows.win32.globalization
+UCNV_RESET -> ,UCNV_RESET_
+UCNV_CLOSE -> ,UCNV_CLOSE_
+UCOL_EQUAL -> ,UCOL_EQUAL_
+UCOL_GREATER -> ,UCOL_GREATER_
+#
+- windows.win32.web.mshtml
+htmlInputImage -> ,htmlInputImage_
+#
+- windows.win32.networking.winsock
+tcp_keepalive -> ,tcp_keepalive_
+#
+- windows.win32.networkmanagement.wifi
+dot11_manufacturing_test_set_data -> ,dot11_manufacturing_test_set_data_
+dot11_manufacturing_test_query_data -> ,dot11_manufacturing_test_query_data_
+dot11_manufacturing_test_sleep -> ,dot11_manufacturing_test_sleep_
+dot11_manufacturing_test_state_change -> ,dot11_manufacturing_test_state_change_
+wlan_hosted_network_state_change -> ,wlan_hosted_network_state_change_
+#
