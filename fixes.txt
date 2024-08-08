@@ -336,3 +336,5 @@ dot11_manufacturing_test_sleep -> ,dot11_manufacturing_test_sleep_
 dot11_manufacturing_test_state_change -> ,dot11_manufacturing_test_state_change_
 wlan_hosted_network_state_change -> ,wlan_hosted_network_state_change_
 #
+- windows.win32.system.winrt.printing
+IPrintWorkflowXpsReceiver2.Failed -> ,Failed_

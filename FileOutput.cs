@@ -1037,14 +1037,16 @@ namespace MetadataParser
                     defFiles.AddExport(dllName, fnName);
                 }
                 string funType = (isFunction ? "Function" : "Sub");
-                content.AppendFormat("Declare {0} {1} {2} Overload (", funType, fnName, CallConvToName(callConv));
+                bool hasOverloads = false;
+                content.AppendFormat("Declare {0} {1} {2} ", funType, fnName, CallConvToName(callConv));
+                StringBuilder functionBuffer = new StringBuilder("(", 500);
                 int numArgs = fn.Arguments.Count;
                 if (numArgs > 0)
                 {
-                    content.AppendLine("_ ");
+                    functionBuffer.AppendLine("_ ");
                 }
-                content.Append(argList.argListOutput.ToString());
-                content.Append(')');
+                functionBuffer.Append(argList.argListOutput.ToString());
+                functionBuffer.Append(')');
                 bool retValWrap = false;
                 CustomAttributeValues retAttrs = null;
                 string mangledReturnType = String.Empty;
@@ -1052,10 +1054,10 @@ namespace MetadataParser
                 {
                     mangledReturnType = MangleFBKeyword(retType.ToString());
                     retAttrs = retType.TypeAttributes;
-                    content.AppendFormat(" As {0}", mangledReturnType);
+                    functionBuffer.AppendFormat(" As {0}", mangledReturnType);
                     retValWrap = !String.IsNullOrEmpty(retAttrs?.raiiFree);
                 }
-                content.AppendLine(nl);
+                functionBuffer.AppendLine(nl);
                 if (fnVals.ansiApi)
                 {
                     string neutralName = fnName.Remove(fnName.Length - 1);
@@ -1072,7 +1074,8 @@ namespace MetadataParser
                         outputStreams.UnicodeDefs.AppendFormat("#define {0} {1}{2}", neutralName, fnName, nl);
                     }
                 }
-                if (options.niceWrappers)
+                // can't have overloads of variadic functions in FB for some reason
+                if (options.niceWrappers && !((fn.Arguments.Count > 0) && (fn.Arguments[fn.Arguments.Count - 1].Name == TypeCollector.VARARG_PARAMETER)))
                 {
                     if (retValWrap)
                     {
@@ -1083,11 +1086,20 @@ namespace MetadataParser
                     int skipWrapperBitfield = 0;
                     if ((whichArg >= 0) && (mangledReturnType == "HRESULT"))
                     {
-                        OutputNiceOutputReturnWrapper(content, outputStreams.Overloads, null, fnName, fn.Arguments, argList, whichArg, typeRegistry);
+                        using (IfDefGuard overloadDef = new IfDefGuard(outputStreams.Overloads, archIfDef))
+                        {
+                            OutputNiceOutputReturnWrapper(functionBuffer, outputStreams.Overloads, null, fnName, fn.Arguments, argList, whichArg, typeRegistry);
+                        }
                         skipWrapperBitfield = ShouldSkipOptionalWrap(whichArg, fn.Arguments);
+                        hasOverloads = true;
                     }
-                    OutputOptionalFunctionParamLadder(argList, null, outputStreams.Overloads, isFunction, null, fnName, mangledReturnType, skipWrapperBitfield);
+                    hasOverloads |= OutputOptionalFunctionParamLadder(argList, null, outputStreams.Overloads, isFunction, null, fnName, mangledReturnType, skipWrapperBitfield, archIfDef);
                 }
+                if(hasOverloads)
+                {
+                    content.Append("Overload ");
+                }
+                content.Append(functionBuffer.ToString());
             }
         }
 
@@ -1102,7 +1114,7 @@ namespace MetadataParser
         // We skip producing it if there is only one arg and it is optional
         // that stops generation of dumb things like
         // function GlobalFree() { return GlobalFree(0);}
-        private void OutputOptionalFunctionParamLadder(
+        private bool OutputOptionalFunctionParamLadder(
             ArgListInformation argList, 
             StringBuilder declares, 
             StringBuilder content, 
@@ -1110,9 +1122,11 @@ namespace MetadataParser
             string iface,
             string fnName, 
             string returnType,
-            int skipGenBitfield
+            int skipGenBitfield,
+            string archGuard
         )
         {
+            bool wroteAny = false;
             int optParams = argList.optionalParamBitfield & ~skipGenBitfield;
             if ((optParams != 0) && (argList.parameters > 1))
             {
@@ -1122,55 +1136,60 @@ namespace MetadataParser
                 StringBuilder declaresToUse = declares ?? new StringBuilder();
                 string funType = isFunction ? "Function" : "Sub";
                 StringBuilder innerStatement = new StringBuilder();
-                while (optParams != 0)
+                using (IfDefGuard guard = new IfDefGuard(content, archGuard))
                 {
-                    bool seenFirstOptParam = false;
-                    content.AppendFormat("Private {0} {1} Overload ( ", funType, contentFunctionName);
-                    declaresToUse.AppendFormat("{0}Declare {1} {2} Overload ( ", declIndent, funType, fnName);
-                    int paramNum = 0;
-                    if (isFunction)
+                    while (optParams != 0)
                     {
-                        innerStatement.AppendFormat("{0}Return ", INDENT);
-                    }
-                    innerStatement.AppendFormat("{0}(", fnName);
-                    bool didOneParamDef = false;
-                    foreach (string paramDef in argList.parameterDefs)
-                    {
-                        int paramBit = 1 << paramNum;
-                        if ((optParams & paramBit) != 0)
+                        wroteAny = true;
+                        bool seenFirstOptParam = false;
+                        content.AppendFormat("Private {0} {1} Overload ( ", funType, contentFunctionName);
+                        declaresToUse.AppendFormat("{0}Declare {1} {2} Overload ( ", declIndent, funType, fnName);
+                        int paramNum = 0;
+                        if (isFunction)
                         {
-                            if (!seenFirstOptParam)
+                            innerStatement.AppendFormat("{0}Return ", INDENT);
+                        }
+                        innerStatement.AppendFormat("{0}(", fnName);
+                        bool didOneParamDef = false;
+                        foreach (string paramDef in argList.parameterDefs)
+                        {
+                            int paramBit = 1 << paramNum;
+                            if ((optParams & paramBit) != 0)
                             {
-                                // make this param required next time
-                                seenFirstOptParam = true;
-                                optParams &= ~paramBit;
+                                if (!seenFirstOptParam)
+                                {
+                                    // make this param required next time
+                                    seenFirstOptParam = true;
+                                    optParams &= ~paramBit;
+                                }
+                                innerStatement.Append("0, ");
                             }
-                            innerStatement.Append("0, ");
+                            else
+                            {
+                                didOneParamDef = true;
+                                content.AppendFormat("{0}, ", paramDef);
+                                declaresToUse.AppendFormat("{0}, ", paramDef);
+                                innerStatement.AppendFormat("{0}, ", argList.argNames[paramNum]);
+                            }
+                            ++paramNum;
                         }
-                        else
+                        // chop off the trailing commas
+                        if (didOneParamDef)
                         {
-                            didOneParamDef = true;
-                            content.AppendFormat("{0}, ", paramDef);
-                            declaresToUse.AppendFormat("{0}, ", paramDef);
-                            innerStatement.AppendFormat("{0}, ", argList.argNames[paramNum]);
+                            content.Length -= 2;
+                            declaresToUse.Length -= 2;
                         }
-                        ++paramNum;
+                        innerStatement.Length -= 2;
+                        content.AppendFormat("){0}{1}", isFunction ? " As " + returnType : String.Empty, nl);
+                        declaresToUse.AppendFormat("){0}{1}", isFunction ? " As " + returnType : String.Empty, nl);
+                        innerStatement.Append(')');
+                        content.AppendLine(innerStatement.ToString());
+                        content.AppendFormat("End {0}{1}{1}", funType, nl);
+                        innerStatement.Length = 0;
                     }
-                    // chop off the trailing commas
-                    if (didOneParamDef)
-                    {
-                        content.Length -= 2;
-                        declaresToUse.Length -= 2;
-                    }
-                    innerStatement.Length -= 2;
-                    content.AppendFormat("){0}{1}", isFunction ? " As " + returnType : String.Empty, nl);
-                    declaresToUse.AppendFormat("){0}{1}", isFunction ? " As " + returnType : String.Empty, nl);
-                    innerStatement.Append(')');
-                    content.AppendLine(innerStatement.ToString());
-                    content.AppendFormat("End {0}{1}{1}", funType, nl);
-                    innerStatement.Length = 0;
                 }
             }
+            return wroteAny;
         }
 
         // theh parameters here are pre-mangled
@@ -1499,49 +1518,63 @@ namespace MetadataParser
             StringBuilder allForwards = new StringBuilder();
             StringBuilder ifaceDef = new StringBuilder();
             ifaceDef.AppendFormat("Type {0} extends {1}{2}", ifaceName, baseName, nl);
+            StringBuilder functionBuffer = new StringBuilder("(", 500);
             foreach (FunctionType fn in iface.Fields)
             {
                 FunctionArgType retType = fn.ReturnType;
                 List<FunctionArgType> args = fn.Arguments;
                 bool isFunction = IsFunctionFromReturnType(retType);
                 string mangledFnName = MangleFBKeyword(fn.Name);
-                ifaceDef.AppendFormat("{0}Declare Abstract {1} {2} Overload (", INDENT, (isFunction ? "Function" : "Sub"), mangledFnName);
+                functionBuffer.Length = 1;
+                ifaceDef.AppendFormat("{0}Declare Abstract {1} {2} ", INDENT, (isFunction ? "Function" : "Sub"), mangledFnName);
                 if (fn.Arguments.Count > 0)
                 {
-                    ifaceDef.AppendLine("_");
+                    functionBuffer.AppendLine("_");
                 }
                 ArgListInformation argInfo = GatherArgList(args, INDENT + INDENT);
                 includeText.Append(argInfo.headers.ToString());
-                ifaceDef.AppendFormat("{0}{1}) ", argInfo.argListOutput.ToString(), INDENT);
+                functionBuffer.AppendFormat("{0}{1}) ", argInfo.argListOutput.ToString(), INDENT);
                 allForwards.Append(argInfo.forwardDeclares.ToString());
+                string retTypeString = String.Empty;
                 if (isFunction)
                 {
-                    string retTypeString = GetInterfaceFunctionReturnType(allForwards, retType);
-                    OutputInterfaceFunctionReturnType(ifaceDef, retTypeString, retType.CustomAttributes);
-                    // if there are any out only parameters, and this function just returns a status
-                    // create a nice wrapper function that will turn the last output into a return value
-                    // 
-                    if (options.niceWrappers)
+                    retTypeString = GetInterfaceFunctionReturnType(allForwards, retType);
+                    OutputInterfaceFunctionReturnType(functionBuffer, retTypeString, retType.CustomAttributes);
+                }
+                else functionBuffer.AppendLine(nl);
+                // if there are any out only parameters, and this function just returns a status
+                // create a nice wrapper function that will turn the last output into a return value
+                // 
+                bool hasOverloads = false;
+                if (options.niceWrappers)
+                {
+                    int whichArg = HasOutputThatIsntForwarded(argInfo);
+                    int skipOptionalGeneration = -1;
+                    if ((whichArg >= 0) && (retType.ParamType.ToString() == "HRESULT"))
                     {
-                        int whichArg = HasOutputThatIsntForwarded(argInfo);
-                        int skipOptionalGeneration = -1;
-                        if ((whichArg >= 0) && (retType.ParamType.ToString() == "HRESULT"))
+                        using (IfDefGuard guard = new IfDefGuard(niceWrapperContent, archIfDef))
                         {
-                            OutputNiceOutputReturnWrapper(ifaceDef, niceWrapperContent, ifaceName, mangledFnName, args, argInfo, whichArg, typeRegistry);
-                            skipOptionalGeneration = ShouldSkipOptionalWrap(whichArg, args);
+                            OutputNiceOutputReturnWrapper(functionBuffer, niceWrapperContent, ifaceName, mangledFnName, args, argInfo, whichArg, typeRegistry);
                         }
-                        // if the interface has its own overloads of this function, don't generate ours
-                        // since they'll likely collide/cause ambiguous calls (ie they do, see graphics.directwrite - IDWriteFontSet1->GetFilteredFonts)
-                        if (!InterfaceHasItsOwnOverloadsOf(iface.Fields, mangledFnName))
-                        {
-                            OutputOptionalFunctionParamLadder(argInfo, ifaceDef, niceWrapperContent, isFunction, ifaceName, mangledFnName, retTypeString, skipOptionalGeneration);
-                        }
+                        skipOptionalGeneration = ShouldSkipOptionalWrap(whichArg, args);
+                        hasOverloads = true;
+                    }
+                    // if the interface has its own overloads of this function, don't generate ours
+                    // since they'll likely collide/cause ambiguous calls (ie they do, see graphics.directwrite - IDWriteFontSet1->GetFilteredFonts)
+                    if (!InterfaceHasItsOwnOverloadsOf(iface.Fields, mangledFnName))
+                    {
+                        hasOverloads |= OutputOptionalFunctionParamLadder(argInfo, functionBuffer, niceWrapperContent, isFunction, ifaceName, mangledFnName, retTypeString, skipOptionalGeneration, archIfDef);
+                    }
+                    if(hasOverloads)
+                    {
+                        ifaceDef.Append("Overload ");
                     }
                 }
                 else
                 {
-                    ifaceDef.AppendLine();
+                    functionBuffer.AppendLine();
                 }
+                ifaceDef.Append(functionBuffer.ToString());
             }
             ifaceDef.AppendFormat("End Type{0}{0}{1}", nl, niceWrapperContent.ToString());
             content.AppendLine(includeText.ToString());
@@ -1609,7 +1642,7 @@ namespace MetadataParser
                     "Private Function {0}.{1} ({2}) As {3}{4}" +
                     "{5}Dim {6} As {3}{4}" +
                     "{5}Dim __hr As HRESULT = (@This)->{1}({7}){4}" +
-                    "#If __INTERFACE_DEBUG{4}" +
+                    "#If __FBWINHEADERGEN_DEBUG{4}" +
                     "{5}If __hr < 0 Then{4}" +
                     "{5}{5}Print Using \"Interface call &.& failed with hr = &\"; \"{0}\"; \"{1}\"; Hex(__hr){4}" +
                     "{5}End If{4}" +
@@ -1632,7 +1665,7 @@ namespace MetadataParser
                     "Private Function {0} Overload ({2}) As {3}{4}" +
                     "{5}Dim {6} As {3}{4}" +
                     "{5}Dim __hr As HRESULT = {0}({7}){4}" +
-                    "#If __INTERFACE_DEBUG{4}" +
+                    "#If __FBWINHEADERGEN_DEBUG{4}" +
                     "{5}If __hr < 0 Then{4}" +
                     "{5}{5}Print Using \"Function & failed with hr = &\"; \"{0}\"; Hex(__hr){4}" +
                     "{5}End If{4}" +
@@ -1785,7 +1818,18 @@ namespace MetadataParser
                 // some parameters have the same name as enum values
                 // in C# these have different namespaces so no problem.
                 // In FB enums are global and it causes problems
-                string paramDef = String.Format("ByVal {0}_ as {1}{2}", MangleFBKeyword(arg.Name), typeQualifiers, MangleFBKeyword(argListType.ToString()));
+                string paramDef;
+                string argName;
+                if (arg.Name != TypeCollector.VARARG_PARAMETER)
+                {
+                    argName = MangleFBKeyword(arg.Name) + "_";
+                    paramDef = String.Format("ByVal {0} as {1}{2}", argName, typeQualifiers, MangleFBKeyword(argListType.ToString()));
+                }
+                else
+                {
+                    argName = paramDef = "...";
+                    Debug.Assert(paramNum == (numArgs - 1), "Vararg parameter should always be the last one");
+                }
                 argInfo.parameterDefs.Add(paramDef);
                 argInfo.argNames.Add(MangleFBKeyword(arg.Name) + "_");
                 argInfo.argListOutput.AppendFormat(

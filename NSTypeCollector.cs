@@ -45,6 +45,7 @@ namespace MetadataParser
         private SignatureTypeProvider typeProv;
         private NameChangeDB nameFixes;
         private const string GLOBALS_CLASS = "Apis";
+        internal const string VARARG_PARAMETER = "__arglist";
 
         struct ObjectIdentity
         {
@@ -316,6 +317,17 @@ namespace MetadataParser
             for (int i = 0; i < numParams; ++i, paramEnum.MoveNext())
             {
                 funType.AddArgument(ReadFunctionArg(ns, parent + name + ".", paramEnum.Current, prototype.ParameterTypes[i], attrTypeProv));
+            }
+            if(prototype.Header.CallingConvention == SignatureCallingConvention.VarArgs)
+            {
+                funType.AddArgument(
+                    new FunctionArgType(
+                        VARARG_PARAMETER, 
+                        null, 
+                        SignatureTypeProvider.CreateNameOnlyTypeInfo("windows.win32.foundation", "VarArgs"),
+                        ParameterAttributes.In
+                    )
+                );
             }
             return funType;
         }
