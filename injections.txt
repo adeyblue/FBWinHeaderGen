@@ -52,11 +52,24 @@ End Destructor
 Type IFaceWrapName(iFaceType)
     As iFaceType Ptr pIFace
 
+    Declare Constructor()
+    Declare Constructor(ByVal pInt As iFaceType Ptr)
     Declare Operator@() As iFaceType Ptr Ptr
     Declare Destructor()
 End Type
 
-Private Operator IFaceWrapName(iFaceType).@() As ifaceType Ptr Ptr
+Private Constructor IFaceWrapName(iFaceType) ()
+    pIFace = 0
+End Constructor
+
+Private Constructor IFaceWrapName(iFaceType) (ByVal pInt As iFaceType Ptr)
+    pIFace = pInt
+End Constructor
+
+Private Operator IFaceWrapName(iFaceType).@() As iFaceType Ptr Ptr
+#if __FBWINHEADERGEN_DEBUG
+    Assert(pIface = 0)
+#Endif
     Return @pIFace
 End Operator
 
