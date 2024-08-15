@@ -93,6 +93,7 @@ namespace MetadataParser
     {
         private StringBuilder defContentsX86;
         private StringBuilder defContentsX64;
+        private string dll;
         private static readonly string nl = Environment.NewLine;
 
         public DefFileCreator(string dllName)
@@ -105,33 +106,21 @@ namespace MetadataParser
                 dllName,
                 nl
             );
+            dll = dllName;
             defContentsX86 = new StringBuilder(header, 2048);
             defContentsX64 = new StringBuilder(header, 2048);
         }
 
-        public void AddExport(string funcName, int argSize, bool stdcall, string origName)
+        public void AddExport(string funcName, int argSize, bool stdcall)
         {
-            const string x64Format = "{0}{2}";
-            const string x86StdcallFormat = "\"{0}@{1}\"{2}";
-            string x86Format = stdcall ? x86StdcallFormat : x64Format;
-            // if this was a name that conflicted with a keyword (ie Beep)
-            // make the decorated name an alias to the non-decorated version
-            // otherwise the app won't run at runtime since it'll only link to the 
-            // decorated name (ie __Beep), which won't exist in the windows dll
-            if (funcName != origName)
+            const string NameOnlyFormat = "{0}{2}";
+            defContentsX86.AppendFormat(NameOnlyFormat, funcName, argSize, nl);
+            defContentsX64.AppendFormat(NameOnlyFormat, funcName, argSize, nl);
+
+            if (stdcall)
             {
-                defContentsX86.AppendFormat(x86Format, origName, argSize, nl);
-                defContentsX64.AppendFormat(x64Format, origName, argSize, nl);
-                const string x64FormatAlias = "{0}={2}{3}";
-                const string x86StdcallFormatAlias = "\"{0}@{1}={2}@{1}\"{3}";
-                string x86FormatAlias = stdcall ? x86StdcallFormatAlias : x64FormatAlias;
-                defContentsX86.AppendFormat(x86FormatAlias, funcName, argSize, origName, nl);
-                defContentsX64.AppendFormat(x64FormatAlias, funcName, argSize, origName, nl);
-            }
-            else
-            {
-                defContentsX86.AppendFormat(x86Format, funcName, argSize, nl);
-                defContentsX64.AppendFormat(x64Format, funcName, argSize, nl);
+                const string StdcallAliasFormat = "{0}@{1}={2}{3}";
+                defContentsX86.AppendFormat(StdcallAliasFormat, funcName, argSize, funcName, nl);
             }
         }
 
@@ -151,7 +140,7 @@ namespace MetadataParser
             defFiles = new Dictionary<string, DefFileCreator>();
         }
 
-        public void AddExport(string dllName, string functionName, int argSize, bool stdcall, string origName)
+        public void AddExport(string dllName, string functionName, int argSize, bool stdcall)
         {
             DefFileCreator creator;
             if(!defFiles.TryGetValue(dllName, out creator))
@@ -159,7 +148,7 @@ namespace MetadataParser
                 creator = new DefFileCreator(dllName);
                 defFiles.Add(dllName, creator);
             }
-            creator.AddExport(functionName, argSize, stdcall, origName);
+            creator.AddExport(functionName, argSize, stdcall);
         }
 
         public void WriteToDirectory(string x86Dir, string x64Dir)
@@ -673,15 +662,7 @@ namespace MetadataParser
                     }
                     if (memVals.bitfields != null)
                     {
-                        long offsetSoFar = 0;
-                        foreach (BitfieldMember bm in memVals.bitfields)
-                        {
-                            Debug.Assert(bm.offset == offsetSoFar, "There are gaps in this bitfield!");
-                            string bmName = MangleFBKeyword(bm.name);
-                            bmName = UniquifyName(bmName, members);
-                            structBuffer.AppendFormat("{0}{1} : {2} As {3}{4}", memberIndent, bmName, bm.length, MangleFBKeyword(member.ParamType.ToString()), nl);
-                            offsetSoFar += bm.length;
-                        }
+                        OutputBitfield(structBuffer, memVals.bitfields, memberType, members, memberIndent);
                     }
                     else if (!(name.StartsWith("Anonymous") || IsInnerType(strippedType, structType.NestedTypes)))
                     {
@@ -905,6 +886,52 @@ namespace MetadataParser
             guardWriter?.Dispose();
         }
 
+        private void OutputBitfield(StringBuilder structBuffer, List<BitfieldMember> fields, SimpleTypeHandleInfo underlyingType, HashSet<string> memberNames, string indent)
+        {
+            SimpleTypeHandleInfo realType = GetRealType(underlyingType, typeRegistry) ?? underlyingType;
+            Debug.Assert(realType is PrimitiveTypeHandleInfo, "Bitfield type wasn't primitive?");
+            // Freebasic doesn't allow bitfields of types bigger than native integer, so if we get any that are bigger than
+            // int32, split them up into two int32s so the header will compile in both 32 and 64-bit mode
+            List<BitfieldMember> newBitfields;
+            if(realType.TypeInfo == typeof(FBTypes.ULongInt) || realType.TypeInfo == typeof(FBTypes.LongInt))
+            {
+                newBitfields = new List<BitfieldMember>(fields.Count * 2);
+                int numFields = fields.Count;
+                for(int i = 0; i < numFields; ++i)
+                {
+                    BitfieldMember bm = fields[i];
+                    long newOffset = bm.offset;
+                    if (bm.offset >= 32)
+                    {
+                        newOffset = bm.offset - 32;
+                    }
+                    long overspill = bm.length - (32 - newOffset);
+                    // if this goes over the 4-byte boundary, it needs splitting into two entries
+                    if (overspill > 0)
+                    {
+                        long newLength = (32 - newOffset);
+                        newBitfields.Add(new BitfieldMember(bm.name, newOffset, newLength));
+                        newBitfields.Add(new BitfieldMember(bm.name, 0, overspill));
+                    }
+                    else
+                    {
+                        newBitfields.Add(new BitfieldMember(bm.name, newOffset, bm.length));
+                    }
+                }
+                fields = newBitfields;
+                underlyingType = new PrimitiveTypeHandleInfo(System.Reflection.Metadata.PrimitiveTypeCode.UInt32);
+            }
+            long offsetSoFar = 0;
+            foreach (BitfieldMember bm in fields)
+            {
+                Debug.Assert(bm.offset == (offsetSoFar % 32), "There are gaps in this bitfield!");
+                string bmName = MangleFBKeyword(bm.name);
+                bmName = UniquifyName(bmName, memberNames);
+                structBuffer.AppendFormat("{0}{1} : {2} As {3}{4}", indent, bmName, bm.length, MangleFBKeyword(underlyingType.ToString()), nl);
+                offsetSoFar += bm.length;
+            }
+        }
+
         //private void OutputFunctionPtrs(List<FunctionPointerType> funPtrs)
         //{
         //    foreach (FunctionPointerType fnPtr in funPtrs)
@@ -1068,11 +1095,17 @@ namespace MetadataParser
                     content.AppendFormat("'' Dll - {0}{1}", dllName, nl);
                     callConv = importAttr.CallingConvention;
                     bool isStdcall = (callConv == CallingConvention.Winapi);
-                    defFiles.AddExport(dllName, fnName, (argList.parameters * 4), isStdcall, fn.Name);
+                    defFiles.AddExport(dllName, fn.Name, (argList.parameters * 4), isStdcall);
                 }
                 string funType = (isFunction ? "Function" : "Sub");
                 bool hasOverloads = false;
-                content.AppendFormat("Declare {0} {1} {2} ", funType, fnName, CallConvToName(callConv));
+                content.AppendFormat(
+                    "Declare {0} {1} {2} {3} ", 
+                    funType,
+                    fnName,
+                    CallConvToName(callConv),
+                    (fn.Name != fnName) ? "Alias \"" + fn.Name + "\"" : String.Empty
+                );
                 StringBuilder functionBuffer = new StringBuilder("(", 500);
                 int numArgs = fn.Arguments.Count;
                 if (numArgs > 0)
@@ -2487,28 +2520,6 @@ namespace MetadataParser
             }
             return retVer;
         }
-
-        // checks if the name begins with a capital H and the type info is void*
-        //static private bool IsWinHandleType(string name, SimpleTypeHandleInfo typeInfo, GlobalTypeRegistry typedefs)
-        //{
-        //    bool isHandle = false;
-        //    PointerTypeHandleInfo pti = typeInfo as PointerTypeHandleInfo;
-        //    if(pti == null)
-        //    {
-        //        HandleTypeHandleInfo hType = typeInfo as HandleTypeHandleInfo;
-        //        if (hType != null)
-        //        {
-        //            SimpleTypeHandleInfo realType = hType.GetRealType(typedefs);
-        //            return IsWinHandleType(name, realType, typedefs);
-        //        }
-        //    }
-        //    if((name[0] == 'H') && (pti != null))
-        //    {
-        //        SimpleTypeHandleInfo realType = pti.NakedType;
-        //        isHandle = (realType is PrimitiveTypeHandleInfo) && (realType.TypeInfo == typeof(FBTypes.Any));
-        //    }
-        //    return isHandle;
-        //}
 
         static private bool IsWinHandleType(string name, SimpleTypeHandleInfo typeInfo, GlobalTypeRegistry typedefs)
         {
