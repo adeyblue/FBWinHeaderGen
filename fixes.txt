@@ -60,7 +60,7 @@ _ -> windows.win32.storage.jet
 - windows.win32.foundation
 BOOLEAN -> ,WINBOOLEAN
 #
-# Most of these names are already used by normal GDI, the ret are just for conformity
+# Most of these names are already used by normal GDI, the rest are just for conformity
 - windows.win32.graphics.gdiplus
 Size -> ,GdipSize
 SizeF -> ,GdipSizeF

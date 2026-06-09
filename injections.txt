@@ -77,6 +77,10 @@ Private Operator *(ByRef wrap as IFaceWrapName(iFaceType)) As iFaceType Ptr
     Return wrap.pIFace
 End Operator
 
+Private Operator ->(ByRef wrap as IFaceWrapName(iFaceType)) ByRef As iFaceType
+    Return *wrap.pIFace
+End Operator
+
 Private Destructor IFaceWrapName(iFaceType)()
     If pIFace Then pIFace->Release()
 End Destructor
@@ -104,3 +108,27 @@ __FB_UNQUOTE__( _
 - windows.win32.foundation
 -- constants
 Const NULL As Any Ptr = 0
+
+- windows.win32.system.threading
+-- functions
+Extern "Windows"
+    Declare Function InterlockedIncrement stdcall(ByVal pVal as Long Ptr) as Long
+    Declare Function InterlockedDecrement stdcall(ByVal pVal as Long Ptr) as Long
+    Declare Function InterlockedCompareExchange stdcall(ByVal pVal as Long Ptr, ByVal exch as Long, ByVal comp as Long) as Long
+    Declare Function InterlockedCompareExchange64 stdcall(ByVal pVal as Long Ptr, ByVal exch as Long, ByVal comp as Long) as Long
+    Declare Function InterlockedExchange stdcall(ByVal pVal as Long Ptr, ByVal newVal as Long) as Long
+End Extern
+
+# This special section adds missing functions to the def files
+# so that we can link to any added functions with the built libs
+#
+# The format
+# dll_name,function_name,arg_bytes,is_stdcall
+#
+- deffiles
+-- functions
+kernel32.dll,InterlockedIncrement,4,1
+kernel32.dll,InterlockedDecrement,4,1
+kernel32.dll,InterlockedCompareExchange,12,1
+kernel32.dll,InterlockedCompareExchange64,20,1
+kernel32.dll,InterlockedExchange,8,1

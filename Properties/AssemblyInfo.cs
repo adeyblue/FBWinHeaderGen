@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyDescription("Generates Windows SDK headers for FreeBasic from the Windows SDK metadata")]
 [assembly: AssemblyCompany("Airesoft.co.uk")]
 [assembly: AssemblyProduct("FBWindowsHeaderGen")]
-[assembly: AssemblyCopyright("Copyright © Airesoft 2024")]
+[assembly: AssemblyCopyright("Copyright © Airesoft 2024-2026")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
