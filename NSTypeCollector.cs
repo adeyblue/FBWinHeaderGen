@@ -198,7 +198,7 @@ namespace MetadataParser
             return dllImport;
         }
 
-        private ConstantValue ProcessConstantField(FieldDefinitionHandle hField)
+        private ConstantValue ConstantFieldToValue(FieldDefinitionHandle hField)
         {
             FieldDefinition field = metaReader.GetFieldDefinition(hField);
             string fName = metaReader.GetString(field.Name);
@@ -228,6 +228,20 @@ namespace MetadataParser
             return nsConstant;
         }
 
+        private void ProcessConstantField(string ns, FieldDefinitionHandle hField)
+        {
+            ConstantValue val = ConstantFieldToValue(hField);
+            ObjectIdentity conLoc = new ObjectIdentity(ns, val.varType.Name, val.varType.CustomAttributes);
+            if (FixupName(ref conLoc))
+            {
+                val.Rename(conLoc.name);
+            }
+            NamespaceContent nsEntries = GetNSContent(conLoc.ns);
+            RawTypeEntries types = nsEntries.TypeEntries;
+            types.Add(val);
+            globalTypes.Add(conLoc.ns, conLoc.name, val);
+        }
+
         private void ProcessEnum(string nsName, TypeDefinition enumDef, CustomAttributeValues attrVals)
         {
             string name = metaReader.GetString(enumDef.Name);
@@ -236,7 +250,7 @@ namespace MetadataParser
             StructType<ConstantValue> thisEnum = new StructType<ConstantValue>(name, attrVals, enumDef.Attributes, null, null, null);
             foreach (FieldDefinitionHandle hField in members)
             {
-                ConstantValue val = ProcessConstantField(hField);
+                ConstantValue val = ConstantFieldToValue(hField);
                 // screen out any backing/enum type fields
                 if (val.varType.Name != "value__")
                 {
@@ -252,6 +266,7 @@ namespace MetadataParser
             ObjectIdentity enumLoc = new ObjectIdentity(nsName, name, thisEnum.AttributeValues);
             if (FixupName(ref enumLoc))
             {
+                thisEnum.Rename(enumLoc.name);
                 name = enumLoc.name;
                 nsName = enumLoc.ns;
             }
@@ -271,13 +286,20 @@ namespace MetadataParser
                 FieldDefinition fDef = metaReader.GetFieldDefinition(hField);
                 SimpleTypeHandleInfo fieldType = fDef.DecodeSignature(typeProv, null);
                 CustomAttributeValues fieldAttrVals = CustomAttributeParser.Parser.ParseAttributes(metaReader, attrTypeProv, fDef.GetCustomAttributes());
-                string fieldName = metaReader.GetString(fDef.Name);
-                ObjectIdentity fieldLoc = new ObjectIdentity(ns, parent + name + "." + fieldName, fieldAttrVals);
-                if(FixupName(ref fieldLoc))
+                if ((fDef.Attributes & FieldAttributes.Literal) != 0)
                 {
-                    fieldName = fieldLoc.name;
+                    ProcessConstantField(ns, hField);
                 }
-                dataStruct.AddMember(new VarType(fieldName, fieldAttrVals, fieldType, fDef.Attributes), fDef.GetOffset());
+                else
+                {
+                    string fieldName = metaReader.GetString(fDef.Name);
+                    ObjectIdentity fieldLoc = new ObjectIdentity(ns, parent + name + "." + fieldName, fieldAttrVals);
+                    if (FixupName(ref fieldLoc))
+                    {
+                        fieldName = fieldLoc.name;
+                    }
+                    dataStruct.AddMember(new VarType(fieldName, fieldAttrVals, fieldType, fDef.Attributes), fDef.GetOffset());
+                }
             }
             return dataStruct;
         }
@@ -536,16 +558,7 @@ namespace MetadataParser
             FieldDefinitionHandleCollection fields = typeDef.GetFields();
             foreach (FieldDefinitionHandle hField in fields)
             {
-                ConstantValue val = ProcessConstantField(hField);
-                ObjectIdentity conLoc = new ObjectIdentity(ns, val.varType.Name, val.varType.CustomAttributes);
-                if(FixupName(ref conLoc))
-                {
-                    val.Rename(conLoc.name);
-                }
-                NamespaceContent nsEntries = GetNSContent(conLoc.ns);
-                RawTypeEntries types = nsEntries.TypeEntries;
-                types.Add(val);
-                globalTypes.Add(conLoc.ns, conLoc.name, val);
+                ProcessConstantField(ns, hField);
             }
             ProcessFunctions(ns, typeDef);
         }

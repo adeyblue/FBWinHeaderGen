@@ -4,6 +4,7 @@
 #
 # - 'name' can be '_' to means everything, to move complete namespaces
 # - 'target-namespace' can be empty to just rename a type without changing namespaces (the comma before 'newname' is still required)
+# - 'target-namespace' can also be the value 'delete' to completely kill/ignore the entry (the comma before 'newname' is still required)
 # - 'attributeField' can be any of the fields in the CustomAttributeValues type (see CustomAttributeParser.cs) that are either a string
 # or a type that can be made null, and newValue is the value to change that field to. It is used in the file below to remove the
 # structSizeField annotation from types where it is mistakenly applied and that cause problems in the generated freebasic.
@@ -71,6 +72,9 @@ RectF -> ,GdipRectF
 Bitmap -> ,GdipBitmap
 Image -> ,GdipImage
 ColorMap -> ,GdipColorMap
+Version -> delete
+Tan -> ,TanColor
+Transparent -> ,TransparentColor
 #
 # VarEnum is also a function
 - windows.win32.system.com
@@ -338,3 +342,6 @@ wlan_hosted_network_state_change -> ,wlan_hosted_network_state_change_
 #
 - windows.win32.system.winrt.printing
 IPrintWorkflowXpsReceiver2.Failed -> ,Failed_
+#
+- windows.win32.graphics.dxcore
+DXCoreRuntimeFilterFlags.None -> ,D3DNone

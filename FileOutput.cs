@@ -36,7 +36,7 @@ namespace MetadataParser
                 "class", "public", "protected", "private", "do", "loop", "property", "end", "select", "new", 
                 "delete", "string", "mod", "this", "import", "beep", "rgb", "continue", "out", "in", "call",
                 "lock", "unlock", "export", "namespace", "base", "restore", "local", "is", "peek", "poke", "swap",
-                "print", "if", "else", "iif", "line", "screen"
+                "print", "if", "else", "iif", "line", "screen", "shared"
             };
             return new HashSet<string>(keywords);
         }
@@ -60,6 +60,7 @@ namespace MetadataParser
             DefFileMapping defMap = new DefFileMapping();
             foreach(NamespaceContent ns in collectionResults.Contents.Values)
             {
+                if (ns.Name == "delete") continue;
                 RawTypeEntries nsTypes = ns.TypeEntries;
                 TypeOrderer orderer = new TypeOrderer(ns.Name, nsTypes);
                 List<TypeOrderer.AddedObject> inOrderList = orderer.MakeOrderedList(nsTypes);
@@ -635,16 +636,18 @@ namespace MetadataParser
                 structContents.Add(new VarType("__unused", dummyAttrVals, new PrimitiveTypeHandleInfo(System.Reflection.Metadata.PrimitiveTypeCode.UInt32), FieldAttributes.Public));
             }
             // typedefs aren't really a type, just a wrapper for the real type
-            if (attrVals.nativeTypedef)
+            if (attrVals.nativeTypedef || attrVals.metadataTypedef)
             {
-
-                Debug.Assert(structContents.Count == 1, "Native typedef had more than 1 internal field!?");
+                Debug.Assert(structContents.Count == 1, "Typedef had more than 1 internal field!?");
                 SimpleTypeHandleInfo asType = structContents[0].ParamType;
                 // to increase type safety like in the Windows headers, instead of all the handles just been
                 // typedefs to void* as they are in the metadata (and thus freely assignable to each other),
                 // we create empty structs of each type and make the handle types pointers to those
                 // (so you can't assign a HWND to a HANDLE)
-                if (IsWinHandleType(structName, asType, typeRegistry))
+                //
+                // This is extended to types that start with a P and have a typedef of IntPtr, so that things like
+                // PTP_CALLBACK_ENVIRON from the threadpool bits in system.threading get the same treatment
+                if ((IsWinHandleType(structName, asType, typeRegistry)) || (structName.StartsWith("P") && BasicFBTypes.IsPrimitive(asType.TypeInfo)))
                 {
                     OutputWindowsHandle(structBuffer, structName);
                 }
@@ -1126,13 +1129,6 @@ namespace MetadataParser
                 }
                 string funType = (isFunction ? "Function" : "Sub");
                 bool hasOverloads = false;
-                content.AppendFormat(
-                    "Declare {0} {1} {2} {3} ", 
-                    funType,
-                    fnName,
-                    CallConvToName(callConv),
-                    (fn.Name != fnName) ? "Alias \"" + fn.Name + "\"" : String.Empty
-                );
                 StringBuilder functionBuffer = new StringBuilder("(", 500);
                 int numArgs = fn.Arguments.Count;
                 if (numArgs > 0)
@@ -1189,10 +1185,14 @@ namespace MetadataParser
                     }
                     hasOverloads |= OutputOptionalFunctionParamLadder(argList, null, outputStreams.Overloads, isFunction, null, fnName, mangledReturnType, skipWrapperBitfield, archIfDef);
                 }
-                if(hasOverloads)
-                {
-                    content.Append("Overload ");
-                }
+                content.AppendFormat(
+                   "Declare {0} {1} {2} {3} {4} ",
+                   funType,
+                   fnName,
+                   CallConvToName(callConv),
+                   hasOverloads ? "Overload" : String.Empty,
+                   (fn.Name != fnName) ? "Alias \"" + fn.Name + "\"" : String.Empty
+                );
                 content.Append(functionBuffer.ToString());
             }
         }
@@ -1230,6 +1230,7 @@ namespace MetadataParser
                 StringBuilder declaresToUse = declares ?? new StringBuilder();
                 string funType = isFunction ? "Function" : "Sub";
                 StringBuilder innerStatement = new StringBuilder();
+                StringBuilder functionCall = new StringBuilder();
                 using (IfDefGuard guard = new IfDefGuard(content, archGuard))
                 {
                     while (optParams != 0)
@@ -1241,9 +1242,9 @@ namespace MetadataParser
                         int paramNum = 0;
                         if (isFunction)
                         {
-                            innerStatement.AppendFormat("{0}Return ", INDENT);
+                            functionCall.AppendFormat("{0}Return ", INDENT);
                         }
-                        innerStatement.AppendFormat("{0}(", fnName);
+                        functionCall.AppendFormat("{0}(", fnName);
                         bool didOneParamDef = false;
                         foreach (string paramDef in argList.parameterDefs)
                         {
@@ -1256,30 +1257,38 @@ namespace MetadataParser
                                     seenFirstOptParam = true;
                                     optParams &= ~paramBit;
                                 }
-                                innerStatement.Append("0, ");
+                                innerStatement.AppendFormat(
+                                    "{3}Dim {0} as {1}{2}", 
+                                    argList.argNames[paramNum], 
+                                    MangleFBKeyword(argList.argTypes[paramNum].ToString()),
+                                    nl,
+                                    INDENT
+                                );
                             }
                             else
                             {
                                 didOneParamDef = true;
                                 content.AppendFormat("{0}, ", paramDef);
                                 declaresToUse.AppendFormat("{0}, ", paramDef);
-                                innerStatement.AppendFormat("{0}, ", argList.argNames[paramNum]);
                             }
+                            functionCall.AppendFormat("{0}, ", argList.argNames[paramNum]);
                             ++paramNum;
                         }
                         // chop off the trailing commas
                         if (didOneParamDef)
                         {
+                            functionCall.Length -= 2;
                             content.Length -= 2;
                             declaresToUse.Length -= 2;
                         }
-                        innerStatement.Length -= 2;
                         content.AppendFormat("){0}{1}", isFunction ? " As " + returnType : String.Empty, nl);
                         declaresToUse.AppendFormat("){0}{1}", isFunction ? " As " + returnType : String.Empty, nl);
-                        innerStatement.Append(')');
+                        functionCall.Append(')');
+                        innerStatement.Append(functionCall.ToString());
                         content.AppendLine(innerStatement.ToString());
                         content.AppendFormat("End {0}{1}{1}", funType, nl);
                         innerStatement.Length = 0;
+                        functionCall.Length = 0;
                     }
                 }
             }
@@ -1783,6 +1792,7 @@ namespace MetadataParser
             public int parameters;
             public List<string> parameterDefs;
             public List<string> argNames;
+            public List<SimpleTypeHandleInfo> argTypes;
             public int inParameters;
             public int inOutParameters;
             public int outParameters;
@@ -1807,6 +1817,7 @@ namespace MetadataParser
                 argListOutput = new StringBuilder();
                 forwardDeclares = new StringBuilder();
                 headers = new StringBuilder();
+                argTypes = new List<SimpleTypeHandleInfo>();
             }
         }
 
@@ -1925,6 +1936,7 @@ namespace MetadataParser
                     Debug.Assert(paramNum == (numArgs - 1), "Vararg parameter should always be the last one");
                 }
                 argInfo.parameterDefs.Add(paramDef);
+                argInfo.argTypes.Add(argListType);
                 argInfo.argNames.Add(MangleFBKeyword(arg.Name) + "_");
                 argInfo.argListOutput.AppendFormat(
                     "{0}{1}{2} _ '' {3}{4}{5}",
@@ -2562,7 +2574,7 @@ namespace MetadataParser
                 }
             }
 
-            if ((name[0] == 'H') && (stripResult.PtrLevels > 0))
+            if (((name[0] == 'H') || name.EndsWith("HANDLE")) && (stripResult.PtrLevels > 0))
             {
                 SimpleTypeHandleInfo realType = stripResult.Stripped;
                 isHandle = (realType is PrimitiveTypeHandleInfo) && (realType.TypeInfo == typeof(FBTypes.Any));

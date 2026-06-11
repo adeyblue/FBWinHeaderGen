@@ -119,6 +119,14 @@ Extern "Windows"
     Declare Function InterlockedExchange stdcall(ByVal pVal as Long Ptr, ByVal newVal as Long) as Long
 End Extern
 
+- windows.win32.graphics.gdiplus
+-- enums
+Enum '' GdipVersion
+   V2 = &h2,
+   V3 = &h3
+End Enum
+Type GdipVersion as ULong
+
 # This special section adds missing functions to the def files
 # so that we can link to any added functions with the built libs
 #
